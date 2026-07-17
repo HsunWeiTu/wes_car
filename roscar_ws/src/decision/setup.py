@@ -24,8 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'gesture_decision_node = decision.gesture_decision_node:main',
-            'teleop_node = decision.teleop_node:main',
+            'gesture_to_car_control_node = decision.gesture_to_car_control_node:main',
+            'joy_to_car_control_node = decision.joy_to_car_control_node:main',
         ],
     },
 )

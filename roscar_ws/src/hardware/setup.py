@@ -24,8 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-                'serial_node = hardware.serial_node:main',
-                'can_node = hardware.can_node:main',
+                'stm32_serial_bridge_node = hardware.stm32_serial_bridge_node:main',
         ],
     },
 )

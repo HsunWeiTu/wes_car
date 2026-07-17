@@ -1,0 +1,20 @@
+{
+    // 使用系統 python3。ROS 2 Humble 綁定的是系統 Python，不要用獨立 venv 去裝 rclpy。
+    "python.defaultInterpreterPath": "/usr/bin/python3",
+
+    // 讓 Pylance 找得到 ROS 2 與工作空間產生的 Python 套件（rclpy / sensor_msgs / wes_car_interface 等）。
+    // 這些路徑在有裝 ROS 的實車上才存在；在沒裝 ROS 的筆電上會被忽略，屬正常現象。
+    "python.analysis.extraPaths": [
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "${workspaceFolder}/roscar_ws/install/wes_car_interface/lib/python3.10/site-packages",
+        "${workspaceFolder}/roscar_ws/install/perception/lib/python3.10/site-packages",
+        "${workspaceFolder}/roscar_ws/install/decision/lib/python3.10/site-packages",
+        "${workspaceFolder}/roscar_ws/install/control/lib/python3.10/site-packages",
+        "${workspaceFolder}/roscar_ws/install/hardware/lib/python3.10/site-packages"
+    ],
+
+    // 沒裝 ROS 的機器上，把「找不到 import」降成提示，避免整片黃底線干擾閱讀。
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "none"
+    }
+}

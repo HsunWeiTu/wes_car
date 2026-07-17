@@ -24,8 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'car_controller = control.car_controller_node:main',
-            'oled_display = control.front_oled:main',
+            'car_control_to_cmd_vel_node = control.car_control_to_cmd_vel_node:main',
+            'front_oled_display_node = control.front_oled_display_node:main',
         ],
     },
 )

@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'gesture_recognition_node = perception.gesture_recognition_node:main'
+            'hand_gesture_recognition_node = perception.hand_gesture_recognition_node:main',
         ],
     },
 )

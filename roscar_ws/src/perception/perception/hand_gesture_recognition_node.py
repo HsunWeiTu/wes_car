@@ -1,5 +1,6 @@
 #!/home/wes/mp_env/bin/python3
 # -*- coding: utf-8 -*-
+import os
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -7,29 +8,41 @@ from geometry_msgs.msg import Point
 from cv_bridge import CvBridge
 import cv2
 import sys
-sys.path.insert(0, '/home/wes/mp_env/lib/python3.10/site-packages')
+sys.path.append(os.environ.get('MEDIAPIPE_SITE_PACKAGES', '/home/wes/mp_env/lib/python3.10/site-packages'))
 import mediapipe as mp
 
 # 引入你的自定義訊息
 from wes_car_interface.msg import Gesture
 
-class GestureRecognitionNode(Node):
+class HandGestureRecognitionNode(Node):
     def __init__(self):
-        super().__init__('gesture_recognition_node')
-        self.get_logger().warn('--- 偵測啟動：正在嘗試訂閱 /ascamera/camera_publisher/rgb0/image ---')
+        super().__init__('hand_gesture_recognition_node')
+        self.declare_parameter('image_topic', '/ascamera/camera_publisher/rgb0/image')
+        self.declare_parameter('gesture_topic', 'raw_gesture_data')
+        self.declare_parameter('max_num_hands', 1)
+        self.declare_parameter('min_detection_confidence', 0.7)
+        self.declare_parameter('min_tracking_confidence', 0.5)
+
+        image_topic = self.get_parameter('image_topic').value
+        gesture_topic = self.get_parameter('gesture_topic').value
+        max_num_hands = int(self.get_parameter('max_num_hands').value)
+        min_detection_confidence = float(self.get_parameter('min_detection_confidence').value)
+        min_tracking_confidence = float(self.get_parameter('min_tracking_confidence').value)
+
+        self.get_logger().warn(f'--- 偵測啟動：正在嘗試訂閱 {image_topic} ---')
         # 1. 初始化訂閱與發布
         self.subscription = self.create_subscription(
-            Image, '/ascamera/camera_publisher/rgb0/image', self.image_callback, 10)
-        self.publisher_ = self.create_publisher(Gesture, 'raw_gesture_data', 10)
+            Image, image_topic, self.image_callback, 10)
+        self.publisher_ = self.create_publisher(Gesture, gesture_topic, 10)
         
         # 2. 初始化工具
         self.bridge = CvBridge()
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
-            max_num_hands=1, # 先專注於一隻手，邏輯比較簡單
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.5
+            max_num_hands=max_num_hands,
+            min_detection_confidence=min_detection_confidence,
+            min_tracking_confidence=min_tracking_confidence
         )
         self.get_logger().info('Recognition Layer: MediaPipe node started.')
 
@@ -92,7 +105,7 @@ class GestureRecognitionNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = GestureRecognitionNode()
+    node = HandGestureRecognitionNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

@@ -1,84 +1,120 @@
-
 from launch import LaunchDescription
-from launch_ros.actions import Node
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 import os
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
-    
-    # 1. Joy Node: �t�dŪ���n��w��T��
+    use_joy = LaunchConfiguration('use_joy')
+    use_camera = LaunchConfiguration('use_camera')
+    use_gesture = LaunchConfiguration('use_gesture')
+    use_hardware = LaunchConfiguration('use_hardware')
+    use_oled = LaunchConfiguration('use_oled')
+    image_topic = LaunchConfiguration('image_topic')
+    gesture_topic = LaunchConfiguration('gesture_topic')
+    control_topic = LaunchConfiguration('control_topic')
+    cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
+    serial_port = LaunchConfiguration('serial_port')
+
     joy_node = Node(
         package='joy',
         executable='joy_node',
         name='joy_node',
+        condition=IfCondition(use_joy),
     )
 
-    # 2. Teleop Node: �t�d�N�n��T�� (sensor_msgs/Joy) �ର�t�׫��O (geometry_msgs/Twist)
-    # �o�̰��]�A�� teleop_node �w�]���� /joy ���D�A�o�� /cmd_vel ���D
-    teleop_node = Node(
+    joy_to_car_control_node = Node(
         package='decision',
-        executable='teleop_node',
-        name='joy_teleop_node', 
+        executable='joy_to_car_control_node',
+        name='joy_to_car_control_node', 
+        parameters=[{
+            'output_control_topic': control_topic,
+        }],
+        condition=IfCondition(use_joy),
     )
 
-    # 3. STM32 Serial Node: �t�d�N�t�׫��O (/cmd_vel) �z�L��f�o�� STM32
-    hardware_node = Node(
+    stm32_serial_bridge_node = Node(
         package='hardware',
-        executable='serial_node',
-        name='serial_node',
+        executable='stm32_serial_bridge_node',
+        name='stm32_serial_bridge_node',
+        parameters=[{
+            'serial_port': serial_port,
+            'cmd_vel_topic': cmd_vel_topic,
+        }],
         arguments=['--ros-args', '--log-level', 'warn'], 
         output='screen',
+        condition=IfCondition(use_hardware),
     )
 
-    # 4. Camera Launch: �t�d�N�t�׫��O (鏡頭) �A�i�H�� camera_launch.py
     camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
             get_package_share_directory('ascamera'), 
             'launch', 
             'ascamera.launch.py'
-        ))
+        )),
+        condition=IfCondition(use_camera),
     )
 
-    # 5. Gesture Perception Node:tdNt׫O (鏡頭影像)AiH gesture_perception_node.py
-    gesture_decision_node = Node(
+    gesture_to_car_control_node = Node(
         package='decision',
-        executable='gesture_decision_node',
-        name='gesture_decision_node'
+        executable='gesture_to_car_control_node',
+        name='gesture_to_car_control_node',
+        parameters=[{
+            'input_gesture_topic': gesture_topic,
+            'output_control_topic': control_topic,
+        }],
+        condition=IfCondition(use_gesture),
     )
 
-    gesture_recognition_node = Node(
-    package='perception',
-    executable='gesture_recognition_node',
-    name='gesture_recognition_node',
-    remappings=[
-        # 將輸入對接到相機發布的真實話題
-        ('/image', '/ascamera/camera_publisher/rgb0/image'),
-        # 輸出則對接到決策層正在監聽的話題
-        ('/gesture', '/wes_car/raw_gesture')
-    ])
-
-    car_controller_node = Node(
-        package='control',
-        executable='car_controller',
-        name='car_controller_node',
-        output='screen'
+    hand_gesture_recognition_node = Node(
+        package='perception',
+        executable='hand_gesture_recognition_node',
+        name='hand_gesture_recognition_node',
+        parameters=[{
+            'image_topic': image_topic,
+            'gesture_topic': gesture_topic,
+        }],
+        condition=IfCondition(use_gesture),
     )
 
-    oled_node = Node(
+    car_control_to_cmd_vel_node = Node(
         package='control',
-        executable='oled_display',
-        name='oled_display_node'
+        executable='car_control_to_cmd_vel_node',
+        name='car_control_to_cmd_vel_node',
+        output='screen',
+        parameters=[{
+            'input_control_topic': control_topic,
+            'output_cmd_vel_topic': cmd_vel_topic,
+        }],
+    )
+
+    front_oled_display_node = Node(
+        package='control',
+        executable='front_oled_display_node',
+        name='front_oled_display_node',
+        condition=IfCondition(use_oled),
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument('use_joy', default_value='true'),
+        DeclareLaunchArgument('use_camera', default_value='true'),
+        DeclareLaunchArgument('use_gesture', default_value='true'),
+        DeclareLaunchArgument('use_hardware', default_value='true'),
+        DeclareLaunchArgument('use_oled', default_value='true'),
+        DeclareLaunchArgument('image_topic', default_value='/ascamera/camera_publisher/rgb0/image'),
+        DeclareLaunchArgument('gesture_topic', default_value='raw_gesture_data'),
+        DeclareLaunchArgument('control_topic', default_value='/car_movement_control'),
+        DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel'),
+        DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0'),
         joy_node,
-        teleop_node,
-        hardware_node,
+        joy_to_car_control_node,
+        stm32_serial_bridge_node,
         camera_launch,
-        gesture_decision_node,
-        gesture_recognition_node,
-        car_controller_node,
-        oled_node
+        gesture_to_car_control_node,
+        hand_gesture_recognition_node,
+        car_control_to_cmd_vel_node,
+        front_oled_display_node
     ])
