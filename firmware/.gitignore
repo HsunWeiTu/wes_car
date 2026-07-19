@@ -1,0 +1,52 @@
+# ============================================================
+# 要「保留」在版控的（不要列在下面忽略清單即可）：
+#   ROS_board.ioc            CubeMX 專案來源
+#   MDK-ARM/*.uvprojx        Keil 專案定義（原始碼清單、編譯/連結選項、目標晶片）
+#   Core/Src, Core/Inc       你的程式碼 + CubeMX 產生的 main/it/hal_msp 等
+#   *.s / *.ld               startup 與連結腳本
+#   ERF01v3.0.pdf            電路圖
+# ============================================================
+
+# --- CubeMX 可從 .ioc 自動重生（網路/CubeMX 皆可取得）---
+Drivers/
+Middlewares/
+
+# --- Keil 個人 IDE 狀態（非專案定義，屬個人環境）---
+*.uvoptx
+*.uvguix.*
+
+# --- Keil / MDK-ARM 編譯產物 ---
+MDK-ARM/Objects/
+MDK-ARM/Listings/
+MDK-ARM/DebugConfig/
+MDK-ARM/RTE/
+*.bak
+*.dep
+*.crf
+*.d
+*.o
+*.axf
+*.htm
+*.lnp
+*.map
+*.lst
+*.scr
+*.iex
+*.sct
+*.build_log.htm
+
+# --- VSCode 嵌入式外掛（EIDE / cortex-debug）產物 ---
+.eide/
+build/
+*.cmsis-pack
+
+# --- 各種 log（Keil assistant / uVision 執行紀錄）---
+*.log
+*.log.lock
+
+# --- 最終燒錄輸出（可由原始碼重新編譯）---
+Debug/
+Release/
+*.hex
+*.bin
+*.elf

@@ -12,6 +12,8 @@ from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Bool
 
 class FrontOledDisplayNode(Node):
+    LOW_BATTERY_THRESHOLD = 0.20  # 20% 以下視為低電量，需閃爍提醒充電
+
     def __init__(self):
         super().__init__('front_oled_display_node')
         self.get_logger().info('Initializing OLED display...')
@@ -26,9 +28,9 @@ class FrontOledDisplayNode(Node):
         self.device = None
         self.font = self.load_font()
         self.battery_percentage = float('nan')
-        self.is_charging = False
         self.gesture_enabled = False
         self.last_battery_time = None
+        self.blink_on = True
 
         # Initialize I2C interface and OLED device
         try:
@@ -49,7 +51,8 @@ class FrontOledDisplayNode(Node):
         self.gesture_sub = self.create_subscription(
             Bool, gesture_enabled_topic, self.gesture_callback, latched_qos)
 
-        self.display_timer = self.create_timer(1.0, self.update_display)
+        # 0.5s 週期讓低電量電池 icon 能閃爍提醒
+        self.display_timer = self.create_timer(0.5, self.on_timer)
         self.update_display()
 
     def load_font(self):
@@ -60,19 +63,26 @@ class FrontOledDisplayNode(Node):
         ]
         for path in candidates:
             try:
-                return ImageFont.truetype(path, 24)
+                return ImageFont.truetype(path, 14)
             except Exception:
                 continue
         return ImageFont.load_default()
 
     def battery_callback(self, msg):
         self.battery_percentage = msg.percentage
-        self.is_charging = (msg.power_supply_status == BatteryState.POWER_SUPPLY_STATUS_CHARGING)
         self.last_battery_time = self.get_clock().now()
         self.update_display()
 
     def gesture_callback(self, msg):
         self.gesture_enabled = msg.data
+        self.update_display()
+
+    def on_timer(self):
+        # 低電量時切換閃爍狀態，其餘情況維持常亮
+        if self.is_low_battery():
+            self.blink_on = not self.blink_on
+        else:
+            self.blink_on = True
         self.update_display()
 
     def update_display(self):
@@ -82,53 +92,72 @@ class FrontOledDisplayNode(Node):
         with canvas(self.device) as draw:
             draw.rectangle(self.device.bounding_box, outline="black", fill="black")
 
-            # 中央：電量趴數 (只顯示趴數，不顯示電壓)
-            if self.is_battery_fresh() and not math.isnan(self.battery_percentage):
-                text = f'{self.battery_percentage * 100:.0f}%'
-            else:
-                text = '--%'
-            self.draw_centered_text(draw, text)
+            # 上排：Wes Car 字樣
+            draw.text((2, 0), 'Wes Car', font=self.font, fill="white")
 
-            # 手勢控車開啟 -> 左邊顯示讚手勢 icon
+            # 手勢控車開啟 -> 右側顯示讚手勢 icon
             if self.gesture_enabled:
-                self.draw_thumbs_up(draw, 2, 6)
+                self.draw_thumbs_up(draw, 112, 6)
 
-            # 充電中 -> 最右邊顯示閃電符號
-            if self.is_charging:
-                self.draw_lightning(draw, 116, 4)
+            # 下排：四格電池 icon (低電量時整顆閃爍)
+            self.draw_battery(draw, 2, 18, 40, 12)
 
-    def draw_centered_text(self, draw, text):
-        try:
-            bbox = draw.textbbox((0, 0), text, font=self.font)
-            w = bbox[2] - bbox[0]
-            h = bbox[3] - bbox[1]
-        except Exception:
-            w, h = draw.textsize(text, font=self.font)
-        x = (128 - w) // 2
-        y = (32 - h) // 2
-        draw.text((x, y), text, font=self.font, fill="white")
+    def draw_battery(self, draw, x, y, w, h):
+        # 低電量閃爍：blink_on 為 False 的半個週期整顆電池不畫
+        if self.is_low_battery() and not self.blink_on:
+            return
+
+        # 電池外框
+        draw.rectangle([x, y, x + w, y + h], outline="white", fill="black")
+        # 正極凸點
+        nub_h = max(h // 2, 4)
+        draw.rectangle(
+            [x + w + 1, y + (h - nub_h) // 2, x + w + 3, y + (h + nub_h) // 2],
+            outline="white", fill="white")
+
+        # 內部四格，依電量填滿；低電量 (<=20%) 或無資料時為空白
+        bars = self.battery_bar_count()
+        if bars <= 0:
+            return
+
+        segments = 4
+        gap = 1
+        inner_x = x + 2
+        inner_y = y + 2
+        inner_w = w - 4
+        inner_h = h - 4
+        seg_w = (inner_w - gap * (segments - 1)) / segments
+        for i in range(bars):
+            bx = inner_x + i * (seg_w + gap)
+            draw.rectangle(
+                [bx, inner_y, bx + seg_w, inner_y + inner_h],
+                fill="white")
+
+    def battery_bar_count(self):
+        # 回傳應點亮的格數 (0~4)；資料失效或低電量回傳 0
+        if not self.is_battery_fresh() or math.isnan(self.battery_percentage):
+            return 0
+        pct = self.battery_percentage
+        if pct <= self.LOW_BATTERY_THRESHOLD:
+            return 0
+        if pct >= 0.75:
+            return 4
+        if pct >= 0.50:
+            return 3
+        if pct >= 0.25:
+            return 2
+        return 1
+
+    def is_low_battery(self):
+        if not self.is_battery_fresh() or math.isnan(self.battery_percentage):
+            return False
+        return self.battery_percentage <= self.LOW_BATTERY_THRESHOLD
 
     def draw_thumbs_up(self, draw, x, y):
         # 簡易讚手勢 icon：拳頭 (方框) + 向上豎起的拇指
-        # 拳頭 (四指握起)
         draw.rectangle([x, y + 10, x + 12, y + 22], outline="white", fill="black")
-        # 拇指 (向上豎起)
         draw.rectangle([x + 2, y, x + 7, y + 11], outline="white", fill="black")
-        # 手臂底線
         draw.line([x, y + 22, x + 12, y + 22], fill="white")
-
-    def draw_lightning(self, draw, x, y):
-        # 閃電符號 (充電中)
-        bolt = [
-            (x + 6, y),
-            (x + 1, y + 12),
-            (x + 5, y + 12),
-            (x + 2, y + 24),
-            (x + 10, y + 9),
-            (x + 6, y + 9),
-            (x + 9, y),
-        ]
-        draw.polygon(bolt, fill="white")
 
     def is_battery_fresh(self):
         if self.last_battery_time is None:
