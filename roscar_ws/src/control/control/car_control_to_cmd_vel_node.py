@@ -8,9 +8,10 @@ class CarControlToCmdVelNode(Node):
         super().__init__('car_control_to_cmd_vel_node')
         self.declare_parameter('input_control_topic', '/car_movement_control')
         self.declare_parameter('output_cmd_vel_topic', '/cmd_vel')
-        self.declare_parameter('max_speed_x', 1.0)
-        self.declare_parameter('max_speed_y', 1.0)
-        self.declare_parameter('max_rotate_z', 1.0)
+        # 最大速度限制 (真實物理單位)，與 CarControl / Twist 一致
+        self.declare_parameter('max_speed_x', 1.0)   # [m/s]
+        self.declare_parameter('max_speed_y', 1.0)   # [m/s]
+        self.declare_parameter('max_rotate_z', 1.0)  # [rad/s]
         self.declare_parameter('command_timeout', 0.5)
         self.declare_parameter('publish_rate', 20.0)
 
@@ -37,10 +38,10 @@ class CarControlToCmdVelNode(Node):
     def command_callback(self, msg):
         twist = Twist()
 
-        # --- 根據指令碼進行映射 ---
-        twist.linear.x = self.clamp(msg.speed_x, -self.max_speed_x, self.max_speed_x)
-        twist.linear.y = self.clamp(msg.speed_y, -self.max_speed_y, self.max_speed_y)
-        twist.angular.z = self.clamp(msg.rotate_z, -self.max_rotate_z, self.max_rotate_z)
+        # --- 單位直接對應 (CarControl 與 Twist 同為 m/s 與 rad/s)，僅做最大值限制 ---
+        twist.linear.x = self.clamp(msg.speed_x, -self.max_speed_x, self.max_speed_x)      # [m/s]
+        twist.linear.y = self.clamp(msg.speed_y, -self.max_speed_y, self.max_speed_y)      # [m/s]
+        twist.angular.z = self.clamp(msg.rotate_z, -self.max_rotate_z, self.max_rotate_z)  # [rad/s]
         self.last_twist = twist
         self.last_command_time = self.get_clock().now()
 

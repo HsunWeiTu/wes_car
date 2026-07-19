@@ -55,11 +55,12 @@ class HandGestureRecognitionNode(Node):
 
             if results.multi_hand_landmarks:
                 for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                    # 判斷左右手 (MediaPipe 的結果)
-                    handedness = results.multi_handedness[idx].classification[0].label
-                    
+                    # 判斷左右手與信心分數 (MediaPipe 的結果)
+                    classification = results.multi_handedness[idx].classification[0]
+
                     # 建立並填充訊息
-                    gesture_msg = self.create_gesture_msg(hand_landmarks, handedness)
+                    gesture_msg = self.create_gesture_msg(
+                        hand_landmarks, classification.label, classification.score)
                     self.publisher_.publish(gesture_msg)
 
             # Debug 用畫圖 (選配，可以增加流暢度)
@@ -69,46 +70,20 @@ class HandGestureRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f'Recognition Error: {e}')
 
-    def create_gesture_msg(self, landmarks, handedness):
+    def create_gesture_msg(self, landmarks, handedness, score):
         msg = Gesture()
         msg.header.stamp = self.get_clock().now().to_msg()
-        #msg.is_left_hand = (handedness == 'Left')
+        msg.handedness = handedness
+        msg.score = float(score)
 
-        # 輔助函數：將 MediaPipe 點轉為 ROS Point
-        def to_p(idx):
+        # 直接把 MediaPipe 的 21 個關鍵點依序填入陣列 (index 對應 Gesture.msg 常數)
+        msg.landmarks = []
+        for lm in landmarks.landmark:
             p = Point()
-            lm = landmarks.landmark[idx]
             p.x = float(lm.x)
             p.y = float(lm.y)
             p.z = float(lm.z)
-            return p
-
-        # 賦值各關鍵點
-        # 手腕 (WRIST: 0) 作為穩定參考點
-        msg.wrist = to_p(0)
-
-        # 掌心
-        msg.palm_center = to_p(9) # 中指根部作為參考中心
-
-        # 指尖 (Tip: 4, 8, 12, 16, 20)
-        msg.thumb_tip  = to_p(4)
-        msg.index_tip  = to_p(8)
-        msg.middle_tip = to_p(12)
-        msg.ring_tip   = to_p(16)
-        msg.pinky_tip  = to_p(20)
-
-        # 指根 (MCP: 2, 5, 9, 13, 17)
-        msg.thumb_mcp  = to_p(2)
-        msg.index_mcp  = to_p(5)
-        msg.middle_mcp = to_p(9)
-        msg.ring_mcp   = to_p(13)
-        msg.pinky_mcp  = to_p(17)
-
-        # 近端指節 (PIP: 6, 10, 14, 18)，用於判斷四指是否握起來
-        msg.index_pip  = to_p(6)
-        msg.middle_pip = to_p(10)
-        msg.ring_pip   = to_p(14)
-        msg.pinky_pip  = to_p(18)
+            msg.landmarks.append(p)
 
         return msg
 

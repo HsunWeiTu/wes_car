@@ -17,6 +17,9 @@ class JoyToCarControlNode(Node):
         self.declare_parameter('axis_linear_y', 0)
         self.declare_parameter('axis_angular_z', 3)
         self.declare_parameter('deadzone', 0.01)
+        # 搖桿推到底時對應的最大速度 (將正規化軸值 [-1,1] 轉成真實物理單位)
+        self.declare_parameter('max_linear_speed', 0.5)   # [m/s]
+        self.declare_parameter('max_angular_speed', 1.0)  # [rad/s]
         # 用哪一顆按鈕切換手勢控車 (buttons 陣列的索引)
         self.declare_parameter('gesture_toggle_button', 0)
         self.declare_parameter('gesture_control_default_enabled', False)
@@ -28,6 +31,8 @@ class JoyToCarControlNode(Node):
         self.axis_linear_y = int(self.get_parameter('axis_linear_y').value)
         self.axis_angular_z = int(self.get_parameter('axis_angular_z').value)
         self.deadzone = float(self.get_parameter('deadzone').value)
+        self.max_linear_speed = float(self.get_parameter('max_linear_speed').value)
+        self.max_angular_speed = float(self.get_parameter('max_angular_speed').value)
         self.gesture_toggle_button = int(self.get_parameter('gesture_toggle_button').value)
         self.gesture_enabled = bool(self.get_parameter('gesture_control_default_enabled').value)
         self.prev_toggle_pressed = False
@@ -81,28 +86,27 @@ class JoyToCarControlNode(Node):
 
         control_msg = CarControl()
         control_msg.header.stamp = self.get_clock().now().to_msg()
-        control_msg.mode = 0
+        control_msg.mode = CarControl.MODE_MANUAL
 
         if len(msg.axes) <= max(self.axis_linear_x, self.axis_linear_y, self.axis_angular_z):
             self.get_logger().warn('Joy message does not contain enough axes for configured mapping.')
             return
 
-        # 讀取搖桿數值 (假設 Axes[1] 是前後, Axes[0] 是左右)
+        # 讀取搖桿正規化數值 [-1.0, 1.0] (假設 Axes[1] 是前後, Axes[0] 是左右)
         forward_backward = msg.axes[self.axis_linear_x]  # 1.0 為前, -1.0 為後
         left_right = msg.axes[self.axis_linear_y]        # 1.0 為左, -1.0 為右
-        cw_ccw = msg.axes[self.axis_angular_z]           # 1.0 為順時針, -1.0 為逆時針
+        cw_ccw = msg.axes[self.axis_angular_z]           # 1.0 為逆時針, -1.0 為順時針
 
-        # 邏輯判斷：決定 command 與 speed
-        # 我們設定一個死區 (Deadzone) 避免搖桿過於靈敏
+        # 死區 (Deadzone) 避免搖桿雜訊，超過門檻才乘上最大速度轉成真實物理單位
         threshold = self.deadzone
-        
-        # 優先判斷前後，再判斷左右 (你也可以根據需求修改判斷優先級)
+
+        # 正規化軸值 × 最大速度 -> speed_x/speed_y 為 [m/s]，rotate_z 為 [rad/s]
         if abs(forward_backward) > threshold:
-            control_msg.speed_x = forward_backward
+            control_msg.speed_x = forward_backward * self.max_linear_speed
         if abs(left_right) > threshold:
-            control_msg.speed_y = left_right
+            control_msg.speed_y = left_right * self.max_linear_speed
         if abs(cw_ccw) > threshold:
-            control_msg.rotate_z = cw_ccw
+            control_msg.rotate_z = cw_ccw * self.max_angular_speed
 
         # 發布訊息
         self.pub_control.publish(control_msg)

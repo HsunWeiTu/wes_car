@@ -20,9 +20,10 @@ class Stm32SerialBridgeNode(Node):
         self.declare_parameter('serial_timeout', 1.0)
         self.declare_parameter('cmd_vel_topic', 'cmd_vel')
         self.declare_parameter('battery_state_topic', 'battery_state')
-        self.declare_parameter('vx_scale', 1000.0)
-        self.declare_parameter('vy_scale', 1000.0)
-        self.declare_parameter('wz_scale', 5000.0)
+        # 將 /cmd_vel 的真實物理單位轉成 STM32 協議的整數原始值 (依協議縮放倍率)
+        self.declare_parameter('vx_scale', 1000.0)  # [m/s]   -> raw (×1000)
+        self.declare_parameter('vy_scale', 1000.0)  # [m/s]   -> raw (×1000)
+        self.declare_parameter('wz_scale', 5000.0)  # [rad/s] -> raw (×5000)
         self.declare_parameter('battery_min_voltage', 9.6)
         self.declare_parameter('battery_max_voltage', 12.6)
         # 電壓 >= 此門檻視為充電中 (充電器接上時電壓會高於靜止滿電)
@@ -56,6 +57,7 @@ class Stm32SerialBridgeNode(Node):
         self.set_auto_send_data(True)
 
     def cmd_vel_callback(self, msg):
+        # /cmd_vel 為真實物理單位：linear [m/s]、angular [rad/s]
         vx_raw = self.clamp_int16(msg.linear.x * self.vx_scale)
         vy_raw = self.clamp_int16(msg.linear.y * self.vy_scale)
         wz_raw = self.clamp_int16(msg.angular.z * self.wz_scale)

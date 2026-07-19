@@ -1,30 +1,34 @@
 # Gesture.msg
+# 單一隻手的 MediaPipe 手部關鍵點資料
 std_msgs/Header header
 
-# 手腕 (WRIST: 0)，作為判斷手指彎曲與拇指方向的穩定參考點
-geometry_msgs/Point wrist
+# MediaPipe 21 點索引常數 (landmarks 陣列的 index)
+uint8 WRIST=0
+uint8 THUMB_CMC=1
+uint8 THUMB_MCP=2
+uint8 THUMB_IP=3
+uint8 THUMB_TIP=4
+uint8 INDEX_MCP=5
+uint8 INDEX_PIP=6
+uint8 INDEX_DIP=7
+uint8 INDEX_TIP=8
+uint8 MIDDLE_MCP=9
+uint8 MIDDLE_PIP=10
+uint8 MIDDLE_DIP=11
+uint8 MIDDLE_TIP=12
+uint8 RING_MCP=13
+uint8 RING_PIP=14
+uint8 RING_DIP=15
+uint8 RING_TIP=16
+uint8 PINKY_MCP=17
+uint8 PINKY_PIP=18
+uint8 PINKY_DIP=19
+uint8 PINKY_TIP=20
 
-# 掌心位置 (取第 9 號點 MCP)
-geometry_msgs/Point palm_center
+# 完整 21 點手部關鍵點 (index 對應上方常數)，座標為 MediaPipe 正規化值 (0~1，z 為相對深度)
+# 用陣列而非具名欄位，之後要用到任何新關節都不必修改訊息或重新編譯
+geometry_msgs/Point[] landmarks
 
-# 指尖座標 (Tip: 4, 8, 12, 16, 20)
-geometry_msgs/Point thumb_tip
-geometry_msgs/Point index_tip
-geometry_msgs/Point middle_tip
-geometry_msgs/Point ring_tip
-geometry_msgs/Point pinky_tip
-
-# 指根座標 (MCP: 2, 5, 9, 13, 17)
-# 註：拇指是用 MCP (2)，其餘四指也是 MCP
-geometry_msgs/Point thumb_mcp
-geometry_msgs/Point index_mcp
-geometry_msgs/Point middle_mcp
-geometry_msgs/Point ring_mcp
-geometry_msgs/Point pinky_mcp
-
-# 近端指節座標 (PIP: 6, 10, 14, 18)
-# 用於判斷四指是否握起來 (指尖比 PIP 更靠近手腕代表彎曲)
-geometry_msgs/Point index_pip
-geometry_msgs/Point middle_pip
-geometry_msgs/Point ring_pip
-geometry_msgs/Point pinky_pip
+# 左右手 ("Left" / "Right") 與偵測信心分數 (0~1)
+string handedness
+float32 score
