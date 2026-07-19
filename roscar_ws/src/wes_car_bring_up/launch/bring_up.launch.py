@@ -4,6 +4,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 import os
 from ament_index_python.packages import get_package_share_directory
 
@@ -18,6 +19,9 @@ def generate_launch_description():
     control_topic = LaunchConfiguration('control_topic')
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     serial_port = LaunchConfiguration('serial_port')
+    gesture_enabled_topic = LaunchConfiguration('gesture_enabled_topic')
+    gesture_toggle_button = ParameterValue(
+        LaunchConfiguration('gesture_toggle_button'), value_type=int)
 
     joy_node = Node(
         package='joy',
@@ -32,6 +36,8 @@ def generate_launch_description():
         name='joy_to_car_control_node', 
         parameters=[{
             'output_control_topic': control_topic,
+            'gesture_enabled_topic': gesture_enabled_topic,
+            'gesture_toggle_button': gesture_toggle_button,
         }],
         condition=IfCondition(use_joy),
     )
@@ -65,6 +71,7 @@ def generate_launch_description():
         parameters=[{
             'input_gesture_topic': gesture_topic,
             'output_control_topic': control_topic,
+            'enabled_topic': gesture_enabled_topic,
         }],
         condition=IfCondition(use_gesture),
     )
@@ -95,6 +102,9 @@ def generate_launch_description():
         package='control',
         executable='front_oled_display_node',
         name='front_oled_display_node',
+        parameters=[{
+            'gesture_enabled_topic': gesture_enabled_topic,
+        }],
         condition=IfCondition(use_oled),
     )
 
@@ -109,6 +119,8 @@ def generate_launch_description():
         DeclareLaunchArgument('control_topic', default_value='/car_movement_control'),
         DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel'),
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0'),
+        DeclareLaunchArgument('gesture_enabled_topic', default_value='gesture_control_enabled'),
+        DeclareLaunchArgument('gesture_toggle_button', default_value='0'),
         joy_node,
         joy_to_car_control_node,
         stm32_serial_bridge_node,

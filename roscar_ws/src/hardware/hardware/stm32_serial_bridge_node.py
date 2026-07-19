@@ -25,6 +25,8 @@ class Stm32SerialBridgeNode(Node):
         self.declare_parameter('wz_scale', 5000.0)
         self.declare_parameter('battery_min_voltage', 9.6)
         self.declare_parameter('battery_max_voltage', 12.6)
+        # 電壓 >= 此門檻視為充電中 (充電器接上時電壓會高於靜止滿電)
+        self.declare_parameter('charging_voltage_threshold', 12.7)
 
         serial_port = self.get_parameter('serial_port').value
         baudrate = int(self.get_parameter('baudrate').value)
@@ -36,6 +38,7 @@ class Stm32SerialBridgeNode(Node):
         self.wz_scale = float(self.get_parameter('wz_scale').value)
         self.battery_min_voltage = float(self.get_parameter('battery_min_voltage').value)
         self.battery_max_voltage = float(self.get_parameter('battery_max_voltage').value)
+        self.charging_voltage_threshold = float(self.get_parameter('charging_voltage_threshold').value)
         self.rx_buffer = bytearray()
 
         try:
@@ -139,7 +142,10 @@ class Stm32SerialBridgeNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.voltage = voltage
         msg.present = True
-        msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
+        if voltage >= self.charging_voltage_threshold:
+            msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_CHARGING
+        else:
+            msg.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_DISCHARGING
         msg.power_supply_health = BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN
         msg.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
         msg.percentage = self.voltage_to_percentage(voltage)

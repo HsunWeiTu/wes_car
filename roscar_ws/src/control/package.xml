@@ -10,6 +10,7 @@
   <depend>geometry_msgs</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>wes_car_interface</depend>
 
   <test_depend>ament_copyright</test_depend>

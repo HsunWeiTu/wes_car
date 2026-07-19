@@ -84,6 +84,9 @@ class HandGestureRecognitionNode(Node):
             return p
 
         # 賦值各關鍵點
+        # 手腕 (WRIST: 0) 作為穩定參考點
+        msg.wrist = to_p(0)
+
         # 掌心
         msg.palm_center = to_p(9) # 中指根部作為參考中心
 
@@ -100,6 +103,12 @@ class HandGestureRecognitionNode(Node):
         msg.middle_mcp = to_p(9)
         msg.ring_mcp   = to_p(13)
         msg.pinky_mcp  = to_p(17)
+
+        # 近端指節 (PIP: 6, 10, 14, 18)，用於判斷四指是否握起來
+        msg.index_pip  = to_p(6)
+        msg.middle_pip = to_p(10)
+        msg.ring_pip   = to_p(14)
+        msg.pinky_pip  = to_p(18)
 
         return msg
 
