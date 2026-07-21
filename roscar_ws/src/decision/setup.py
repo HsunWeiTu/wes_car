@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'gesture_to_car_control_node = decision.gesture_to_car_control_node:main',
             'joy_to_car_control_node = decision.joy_to_car_control_node:main',
+            'keyboard_to_car_control_node = decision.keyboard_to_car_control_node:main',
         ],
     },
 )

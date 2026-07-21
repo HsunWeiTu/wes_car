@@ -11,7 +11,7 @@
   <depend>geometry_msgs</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
-  <depend>wes_car_interface</depend>
+  <depend>interface</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

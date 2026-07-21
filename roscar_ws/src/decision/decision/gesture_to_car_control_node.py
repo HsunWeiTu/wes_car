@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy
 from std_msgs.msg import Bool
-from wes_car_interface.msg import Gesture, CarControl
+from interface.msg import Gesture, CarControl
 
 
 class GestureToCarControlNode(Node):

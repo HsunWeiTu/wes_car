@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from wes_car_interface.msg import CarControl
+from interface.msg import CarControl
 
 class CarControlToCmdVelNode(Node):
     def __init__(self):

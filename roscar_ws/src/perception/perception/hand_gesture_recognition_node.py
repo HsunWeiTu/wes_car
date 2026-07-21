@@ -12,7 +12,7 @@ sys.path.append(os.environ.get('MEDIAPIPE_SITE_PACKAGES', '/home/wes/mp_env/lib/
 import mediapipe as mp
 
 # 引入你的自定義訊息
-from wes_car_interface.msg import Gesture
+from interface.msg import Gesture
 
 class HandGestureRecognitionNode(Node):
     def __init__(self):

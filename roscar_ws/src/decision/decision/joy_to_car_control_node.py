@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Bool
-from wes_car_interface.msg import CarControl
+from interface.msg import CarControl
 
 class JoyToCarControlNode(Node):
     def __init__(self):

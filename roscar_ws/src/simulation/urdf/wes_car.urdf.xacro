@@ -1,0 +1,300 @@
+<?xml version="1.0"?>
+<!--
+  Wes Car（Yahboom ROSMASTER M1）模擬模型 —— Gazebo Sim / gz-sim（ROS2 原生路線）
+  ================================================================================
+  結構：
+    base_footprint(地面投影) → base_link(車身)
+      ├─ wheel_{lf,rf,lb,rb}_link  麥克納姆輪 ×4（continuous joint）
+      ├─ lidar_link                光達（gpu_lidar → gz topic /scan）
+      └─ camera_link → camera_optical_link  Nuwa-HP60C 深度相機（rgbd_camera）
+
+  底盤驅動：使用 gz-sim 內建的 MecanumDrive 系統外掛（麥輪專用）。
+            它訂閱 gz topic cmd_vel（geometry_msgs/Twist，含 linear.y 橫移），
+            透過 ros_gz_bridge 橋接成 ROS2 /cmd_vel，與實車 cmd_vel 介面一致。
+            → 模擬時 MecanumDrive 取代了實車的「Twist→UART→STM32→馬達」整條鏈路。
+
+  ⚠ 尺寸來源：輪距/軸距/輪半徑取自 MuJoCo 模型（與實車近似），
+     光達與相機的安裝位置為估計值，請依實車量測後修正 *_offset 屬性。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="wes_car">
+
+  <!-- ========== 尺寸參數（單位：m / kg，取自官方 SolidWorks 匯出量測值） ========== -->
+  <xacro:property name="wheel_radius"   value="0.034"/>  <!-- 官方：base_link 0.0215 + 輪心 0.0125 = 觸地半徑 -->
+  <xacro:property name="wheel_width"    value="0.037"/>  <!-- 僅視覺圓柱長，官方未給單一數值 -->
+  <xacro:property name="wheel_mass"     value="0.102"/>  <!-- 官方單輪質量 -->
+  <xacro:property name="front_x"        value="0.093"/>   <!-- 前軸距車身中心（官方對稱值） -->
+  <xacro:property name="rear_x"         value="-0.093"/>  <!-- 後軸距車身中心（官方對稱值） -->
+  <xacro:property name="half_track"     value="0.08475"/> <!-- 半輪距（y 方向，官方值） -->
+  <xacro:property name="base_mass"      value="1.116"/>   <!-- 官方 base_link 質量 -->
+  <xacro:property name="base_z"         value="0.0215"/>  <!-- base_link 相對地面高度（官方 base_joint） -->
+  <!-- 感測器安裝位置（取自官方 laser / cam1 joint 相對 base_link） -->
+  <xacro:property name="lidar_offset_x"  value="0.010"/>
+  <xacro:property name="lidar_offset_z"  value="0.151"/>
+  <xacro:property name="camera_offset_x" value="0.096"/>
+  <xacro:property name="camera_offset_z" value="0.084"/>
+
+  <!-- ========== 材質 ========== -->
+  <material name="grey"><color rgba="0.5 0.5 0.5 1"/></material>
+  <material name="black"><color rgba="0.1 0.1 0.1 1"/></material>
+  <material name="blue"><color rgba="0.2 0.4 0.8 1"/></material>
+
+  <!-- ========== base_footprint：車體在地面的投影（Nav2 慣例的根 frame） ========== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${base_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========== base_link：車身 ========== -->
+  <link name="base_link">
+    <visual>
+      <!-- 輕量 mesh（874KB，取自 MuJoCo 模型）：63MB 的 rosmaster_m1.stl 會讓
+           gz 算繪執行緒載入卡死（Sensors 系統 Waiting for init），故不使用。
+           offset 與 MuJoCo geom pos 相同，把 mesh 幾何中心對回車體原點。 -->
+      <origin xyz="-0.139423 -0.075781 -0.064947" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://simulation/meshes/rosmaster_m1_lite.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <!-- 碰撞用簡化 box，比 6300 萬頂點的 mesh 高效得多；
+           base_z 降到官方 0.0215 後，origin z 上移至 0.058 以保持車體離地隔、不卡地面 -->
+      <origin xyz="0 0 0.058" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.28 0.2 0.12"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${base_mass}"/>
+      <inertia ixx="0.00183" ixy="0.0" ixz="0.0" iyy="0.00349" iyz="0.0" izz="0.00473"/>
+    </inertial>
+  </link>
+
+  <!-- ========== 麥克納姆輪巨集 ========== -->
+  <!-- reflect_y: 左輪 1 / 右輪 -1
+       fdir      : 滾柱摩擦方向（表達在 base_link，±45°），麥輪全向運動的關鍵 -->
+  <xacro:macro name="mecanum_wheel" params="prefix x reflect_y fdir">
+    <link name="wheel_${prefix}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <!-- 球體 collision：麥輪滾柱的非等向摩擦（fdir1）在球體接觸點最穩定，
+             這是 gz-sim 讓 MecanumDrive 產生正確全向運動的關鍵（cylinder 會失敗） -->
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${wheel_radius}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <inertia ixx="4.6e-05" ixy="0" ixz="0" iyy="7.5e-05" iyz="0" izz="4.6e-05"/>
+      </inertial>
+    </link>
+
+    <joint name="wheel_${prefix}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="wheel_${prefix}_link"/>
+      <origin xyz="${x} ${reflect_y * half_track} ${wheel_radius - base_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+
+    <!-- 麥輪滾柱的非等向摩擦：
+         沿 fdir1（±45°）高摩擦 mu=1，垂直方向 mu2=0 可自由滑動，
+         MecanumDrive 驅動輪速後即產生前進 / 橫移 / 自旋等全向運動。
+         注意：fdir1 必須表達在車體座標，否則會隨輪子自轉而失效；
+         此屬性(ignition:expressed_in="base_footprint")會被 URDF→SDF 移除，
+         故由 sim.launch.py 在轉成 SDF 後再注入（見 _build_gz_sdf）。 -->
+    <gazebo reference="wheel_${prefix}_link">
+      <material>Gazebo/Black</material>
+      <mu1>1.0</mu1>
+      <mu2>0.0</mu2>
+      <fdir1>${fdir}</fdir1>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- X 型麥輪：LF/RB 一組對角、RF/LB 另一組對角 -->
+  <xacro:mecanum_wheel prefix="lf" x="${front_x}" reflect_y="1"  fdir="0.7071 -0.7071 0"/>
+  <xacro:mecanum_wheel prefix="rf" x="${front_x}" reflect_y="-1" fdir="0.7071 0.7071 0"/>
+  <xacro:mecanum_wheel prefix="lb" x="${rear_x}"  reflect_y="1"  fdir="0.7071 0.7071 0"/>
+  <xacro:mecanum_wheel prefix="rb" x="${rear_x}"  reflect_y="-1" fdir="0.7071 -0.7071 0"/>
+
+  <!-- ========== 光達（SLAMTEC RPLIDAR C1）==========
+       官方規格：直徑 55.6mm、高 41.3mm、110g；360°、0.05~12m、0.72°、5KHz、掃描 10Hz -->
+  <link name="lidar_link">
+    <visual>
+      <geometry><cylinder radius="0.0278" length="0.0413"/></geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.0278" length="0.0413"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.11"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="${lidar_offset_x} 0 ${lidar_offset_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========== Nuwa-HP60C 深度相機 ========== -->
+  <link name="camera_link">
+    <visual>
+      <geometry><box size="0.025 0.09 0.025"/></geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.025 0.09 0.025"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${camera_offset_x} 0 ${camera_offset_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 光學 frame：ROS 相機慣例 z 向前、x 向右、y 向下 -->
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <!-- ==================================================== -->
+  <!-- ============ Gazebo Sim (gz-sim) 設定 =============== -->
+  <!--  所有 gz topic 會由 launch 裡的 ros_gz_bridge 橋接成 ROS2 topic  -->
+  <!-- ==================================================== -->
+
+  <!-- 底盤驅動：MecanumDrive（麥輪專用系統外掛）
+       訂閱 gz topic cmd_vel（Twist，含 linear.y 橫移）
+       發布里程計 odom 與 odom→base_footprint 的 TF -->
+  <gazebo>
+    <plugin filename="ignition-gazebo-mecanum-drive-system"
+            name="ignition::gazebo::systems::MecanumDrive">
+      <front_left_joint>wheel_lf_joint</front_left_joint>
+      <front_right_joint>wheel_rf_joint</front_right_joint>
+      <back_left_joint>wheel_lb_joint</back_left_joint>
+      <back_right_joint>wheel_rb_joint</back_right_joint>
+      <wheel_separation>${2 * half_track}</wheel_separation>
+      <wheelbase>${front_x - rear_x}</wheelbase>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      <min_acceleration>-3</min_acceleration>
+      <max_acceleration>3</max_acceleration>
+      <topic>cmd_vel</topic>
+      <!-- odom/TF 交給下方 OdometryPublisher 專用系統發布，這裡不設定以免重複 -->
+    </plugin>
+  </gazebo>
+
+  <!-- 里程計：OdometryPublisher 專職發布 odom 與 odom→base_footprint TF
+       （Fortress 的 MecanumDrive 自帶 odom 發布不可靠，改用此專用系統） -->
+  <gazebo>
+    <plugin filename="ignition-gazebo-odometry-publisher-system"
+            name="ignition::gazebo::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>tf</tf_topic>
+      <odom_publish_frequency>50</odom_publish_frequency>
+    </plugin>
+  </gazebo>
+
+  <!-- 發布輪子 joint states（供 robot_state_publisher 補齊輪子 TF）
+       gz topic: /world/<world>/model/wes_car/joint_state -->
+  <gazebo>
+    <plugin filename="ignition-gazebo-joint-state-publisher-system"
+            name="ignition::gazebo::systems::JointStatePublisher">
+      <joint_name>wheel_lf_joint</joint_name>
+      <joint_name>wheel_rf_joint</joint_name>
+      <joint_name>wheel_lb_joint</joint_name>
+      <joint_name>wheel_rb_joint</joint_name>
+    </plugin>
+  </gazebo>
+
+  <!-- 光達感測器：gpu_lidar → gz topic /scan
+       參數依 SLAMTEC RPLIDAR C1 官方規格：
+         360°全周 • 角度分辨率 0.72° → 500 點/圈
+         測距 0.05~12m(70%反射) • 測距分辨力 15mm • 測距精度 ±30mm
+         掃描頻率 10Hz(典型) -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>scan</topic>
+      <!-- 讓橋接後的 ROS 訊息 frame_id 對上 TF 樹的 lidar_link（否則會是 gz 內部名稱） -->
+      <ignition_frame_id>lidar_link</ignition_frame_id>
+      <update_rate>10</update_rate>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>500</samples>
+            <resolution>1</resolution>
+            <min_angle>${-pi}</min_angle>
+            <max_angle>${pi}</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.05</min>
+          <max>12.0</max>
+          <resolution>0.015</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <!-- Nuwa-HP60C 深度相機：rgbd_camera（一次產生 RGB + 深度 + 點雲）
+       gz topics: /camera/image, /camera/depth_image, /camera/points, /camera/camera_info
+       ⚠ FOV / 解析度 / 量測範圍為佔位值，請依 HP60C 規格書修正 -->
+  <gazebo reference="camera_link">
+    <sensor name="hp60c" type="rgbd_camera">
+      <topic>camera</topic>
+      <!-- ROS 相機慣例：影像/點雲的 frame 用光學座標（z 前、x 右、y 下） -->
+      <ignition_frame_id>camera_optical_link</ignition_frame_id>
+      <update_rate>15</update_rate>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      <camera>
+        <horizontal_fov>1.25</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+        </image>
+        <clip>
+          <near>0.2</near>
+          <far>8.0</far>
+        </clip>
+      </camera>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="base_link">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+
+</robot>
